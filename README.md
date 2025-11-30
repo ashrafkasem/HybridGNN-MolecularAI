@@ -1,0 +1,107 @@
+# Hybrid GNN-based IC50 Prediction
+
+A Hybrid Graph Neural Network (GNN) model that combines molecular graph representations with calculated molecular descriptors for predicting IC50 values.
+
+## Project Structure
+
+```
+GNN/
+├── README.md                    # Project documentation
+├── requirements.txt             # Python dependencies
+├── src/                         # Source code
+│   ├── __init__.py
+│   ├── train.py                 # Main training script (Hybrid Model)
+│   ├── model.py                 # Hybrid GNN + Descriptors architecture
+│   ├── descriptors.py           # Descriptor calculation utilities
+│   ├── utils.py                 # Graph utilities
+│   ├── plotting.py              # Plotting utilities
+│   ├── dataset.py               # Dataset class
+│   ├── evaluate.py              # Evaluation script
+│   └── legacy/                  # Archived/Unused scripts
+├── data/                        # Datasets
+│   ├── raw/                     # Original/raw datasets
+│   └── processed/               # Processed/split datasets
+├── models/                      # Trained model files
+└── results/                     # Training results and outputs
+```
+
+## Installation
+
+1. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+## Usage
+
+### Training the Hybrid Model
+
+The main script `src/train.py` trains a model that fuses GNN embeddings with molecular descriptors (Morgan fingerprints + physicochemical properties).
+
+#### Train on All Datasets (Recommended)
+
+```bash
+python src/train.py \
+    --data_dir data/raw \
+    --epochs 100 \
+    --batch_size 32 \
+    --model_name best_model_hybrid.pt
+```
+
+#### Train on Specific Datasets
+
+```bash
+python src/train.py \
+    --datasets CHEMBL204 CHEMBL206 \
+    --epochs 100
+```
+
+### Key Options
+
+- `--use_fingerprints`: Include Morgan fingerprints (default: True)
+- `--fp_bits`: Number of fingerprint bits (default: 512)
+- `--gnn_hidden_dim`: Hidden dimension for GNN (default: 128)
+- `--regressor_hidden_dim`: Hidden dimension for regressor (default: 64)
+- `--oversample`: Oversample training data to handle imbalance
+
+### Evaluation
+
+Evaluate a trained model on new datasets using `src/evaluate.py`.
+
+```bash
+python src/evaluate.py \
+    --model_path models/saved/best_model_hybrid.pt \
+    --data_path data/raw/CHEMBL204_IC50.csv \
+    --output_dir evaluation_results \
+    --generate_plots
+```
+
+**Arguments:**
+- `--model_path`: Path to the trained model checkpoint.
+- `--data_path`: Path to a CSV file or a directory containing CSV files.
+- `--output_dir`: Directory where predictions and plots will be saved.
+- `--generate_plots`: Flag to generate scatter plots and performance metrics.
+
+## Model Architecture
+
+The **HybridGNNModel** consists of two branches:
+
+1.  **GNN Branch**:
+    - Graph Attention Network (GAT) layers
+    - Global mean and max pooling
+    - Extracts structural features from the molecular graph
+
+2.  **Descriptor Branch**:
+    - MLP processing vector of molecular descriptors
+    - Descriptors include: Morgan fingerprints, Molecular Weight, LogP, TPSA, H-bond donors/acceptors, etc.
+
+3.  **Fusion**:
+    - Concatenates GNN embeddings, processed descriptors, and molecule size (N)
+    - Passed through a final regressor MLP to predict log(IC50)
+
+## Outputs
+
+- **Models**: Saved in `models/saved/`
+- **Plots**: Saved in `results/plots/` (Training curves, Parity plots, Per-dataset metrics)
+- **Metrics**: Saved in `results/logs/`
+

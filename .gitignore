@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.env
+
+# Project specific
+src/legacy/
+backup/
+results/
+data/processed/
+
+# Models - ignore all except the latest hybrid model
+models/saved/*
+!models/saved/combined_model_hybrid.pt
+
+# OS
+.DS_Store
