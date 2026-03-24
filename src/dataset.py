@@ -73,16 +73,37 @@ class IC50Dataset_WithDescriptors(Dataset):
         if oversample:
             self.df = self.df.sample(frac=2, replace=True, random_state=42).reset_index(drop=True)
         
-        # Calculate molecular descriptors for all molecules
-        print(f"  Calculating descriptors for {self.dataset_name}...")
-        self.descriptors = []
-        for idx, row in tqdm(self.df.iterrows(), total=len(self.df), desc=f"    {self.dataset_name}", leave=False):
-            desc = calculate_all_descriptors(row['smiles'], 
-                                            use_fingerprints=use_fingerprints, 
-                                            fp_bits=fp_bits)
-            self.descriptors.append(desc)
+        # Create a unique cache filename based on dataset properties
+        cache_filename = f"{self.dataset_name}_descriptors"
+        cache_filename += f"_fp{fp_bits}" if use_fingerprints else "_nofp"
+        if oversample:
+            cache_filename += "_os"
+            
+        cache_dir = os.path.dirname(csv_path)
+        cache_path = os.path.join(cache_dir, f"{cache_filename}.pt")
         
-        self.descriptors = torch.stack(self.descriptors)
+        if os.path.exists(cache_path):
+            print(f"  Loading cached descriptors for {self.dataset_name} from {cache_path}...")
+            self.descriptors = torch.load(cache_path)
+            # Ensure cache is valid shape
+            if len(self.descriptors) != len(self.df):
+                print(f"  Cache length mismatch ({len(self.descriptors)} vs {len(self.df)}). Recalculating...")
+                self.descriptors = None
+        else:
+            self.descriptors = None
+            
+        if self.descriptors is None:
+            print(f"  Calculating descriptors for {self.dataset_name}...")
+            descriptor_list = []
+            for idx, row in tqdm(self.df.iterrows(), total=len(self.df), desc=f"    {self.dataset_name}", leave=False):
+                desc = calculate_all_descriptors(row['smiles'], 
+                                                use_fingerprints=use_fingerprints, 
+                                                fp_bits=fp_bits)
+                descriptor_list.append(desc)
+            
+            self.descriptors = torch.stack(descriptor_list)
+            print(f"  Saving computed descriptors to {cache_path}...")
+            torch.save(self.descriptors, cache_path)
         
         # Normalize descriptors
         self.desc_mean = self.descriptors.mean(dim=0, keepdim=True)

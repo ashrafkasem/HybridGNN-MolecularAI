@@ -15,10 +15,11 @@ GNN/
 │   ├── descriptors.py           # Descriptor calculation utilities
 │   ├── utils.py                 # Graph utilities
 │   ├── plotting.py              # Plotting utilities
-│   ├── dataset.py               # Dataset class
+│   ├── dataset.py               # Dataset class (with caching)
 │   ├── evaluate.py              # Evaluation script
+│   ├── predict.py               # Single molecule inference script
 │   └── legacy/                  # Archived/Unused scripts
-├── data/                        # Datasets
+├── data/                        # Datasets (stores .pt descriptor caches)
 │   ├── raw/                     # Original/raw datasets
 │   └── processed/               # Processed/split datasets
 ├── models/                      # Trained model files
@@ -37,6 +38,7 @@ pip install -r requirements.txt
 ### Training the Hybrid Model
 
 The main script `src/train.py` trains a model that fuses GNN embeddings with molecular descriptors (Morgan fingerprints + physicochemical properties).
+*Note: Descriptors are automatically cached to disk (`.pt` files) alongside your datasets to significantly speed up future runs.*
 
 #### Train on All Datasets (Recommended)
 
@@ -81,6 +83,24 @@ python src/evaluate.py \
 - `--data_path`: Path to a CSV file or a directory containing CSV files.
 - `--output_dir`: Directory where predictions and plots will be saved.
 - `--generate_plots`: Flag to generate scatter plots and performance metrics.
+
+### Single Molecule Inference
+
+Use `src/predict.py` to predict the IC50 for a specific molecule using either its SMILES string or ChEMBL ID.
+
+**Using a SMILES string:**
+```bash
+python src/predict.py \
+    --model_path models/saved/best_model_hybrid.pt \
+    --smiles "CC(=O)Oc1ccccc1C(=O)O"
+```
+
+**Using a ChEMBL ID (automatically fetches SMILES via REST API):**
+```bash
+python src/predict.py \
+    --model_path models/saved/best_model_hybrid.pt \
+    --chembl_id CHEMBL25
+```
 
 ## Model Architecture
 
