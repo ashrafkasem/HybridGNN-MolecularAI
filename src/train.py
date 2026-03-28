@@ -16,6 +16,7 @@ import json
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 import sys
 import glob
+from bisect import bisect_right
 
 # Add src to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -125,6 +126,33 @@ def evaluate(model, data_loader, device, desc="Evaluating", return_per_dataset=F
     return r2, rmse, mae, y_true, y_pred
 
 
+def compute_train_descriptor_stats(train_subset, concat_dataset, eps=1e-8):
+    """Compute descriptor normalization stats from train split only."""
+    train_indices = train_subset.indices
+    cumulative_sizes = concat_dataset.cumulative_sizes
+    source_datasets = concat_dataset.datasets
+
+    train_descriptors = []
+    for global_idx in train_indices:
+        dataset_idx = bisect_right(cumulative_sizes, global_idx)
+        prev_cum_size = 0 if dataset_idx == 0 else cumulative_sizes[dataset_idx - 1]
+        sample_idx = global_idx - prev_cum_size
+        train_descriptors.append(source_datasets[dataset_idx].descriptors[sample_idx])
+
+    train_descriptors = torch.stack(train_descriptors)
+    desc_mean = train_descriptors.mean(dim=0, keepdim=True)
+    desc_std = train_descriptors.std(dim=0, keepdim=True) + eps
+    return desc_mean, desc_std
+
+
+def apply_descriptor_normalization(datasets, desc_mean, desc_std):
+    """Apply precomputed descriptor normalization to a list of datasets."""
+    for dataset in datasets:
+        dataset.descriptors = (dataset.descriptors - desc_mean) / desc_std
+        dataset.desc_mean = desc_mean
+        dataset.desc_std = desc_std
+
+
 def train_combined(args):
     """Main training function for combined datasets with hybrid model."""
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
@@ -174,7 +202,8 @@ def train_combined(args):
                     oversample=args.oversample, 
                     dataset_name=dataset_name,
                     use_fingerprints=args.use_fingerprints,
-                    fp_bits=args.fp_bits
+                    fp_bits=args.fp_bits,
+                    cache_dir=args.cache_dir
                 )
                 dataset_names.append(dataset_name)
                 datasets.append(dataset)
@@ -198,7 +227,13 @@ def train_combined(args):
         [train_size, test_size],
         generator=torch.Generator().manual_seed(args.random_state)
     )
+
+    # Normalize descriptors using train split statistics only.
+    desc_mean, desc_std = compute_train_descriptor_stats(train_dataset, combined_dataset)
+    apply_descriptor_normalization(datasets, desc_mean, desc_std)
+
     
+
     print(f"Train set: {len(train_dataset)} samples ({len(train_dataset)/total_samples*100:.1f}%)")
     print(f"Test set: {len(test_dataset)} samples ({len(test_dataset)/total_samples*100:.1f}%)")
     
@@ -295,7 +330,9 @@ def train_combined(args):
                 'model_state_dict': model.state_dict(),
                 'use_fingerprints': args.use_fingerprints,
                 'fp_bits': args.fp_bits,
-                'descriptor_size': descriptor_size
+                'descriptor_size': descriptor_size,
+                'desc_mean': desc_mean.cpu(),
+                'desc_std': desc_std.cpu()
             }, model_path)
             print(f"  ✓ Saved best model (Test R²: {test_r2:.4f})")
     
@@ -400,6 +437,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train Hybrid GNN + Descriptors on combined ChEMBL datasets')
     parser.add_argument('--data_dir', type=str, default='data/raw',
                        help='Directory containing ChEMBL IC50 CSV files (default: data/raw)')
+    parser.add_argument('--cache_dir', type=str, default='data/processed/descriptors',
+                       help='Directory to store cached descriptor tensors (default: data/processed/descriptors)')
     parser.add_argument('--datasets', type=str, nargs='+', default=None,
                        help='Specific datasets to use (default: all CHEMBL*.csv files)')
     parser.add_argument('--model_dir', type=str, default='models/saved',

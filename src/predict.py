@@ -65,6 +65,15 @@ def predict(args):
     use_fingerprints = checkpoint.get('use_fingerprints', True)
     fp_bits = checkpoint.get('fp_bits', 512)
     descriptor_size = checkpoint.get('descriptor_size', 544)
+    desc_mean = checkpoint.get('desc_mean')
+    desc_std = checkpoint.get('desc_std')
+
+    if desc_mean is not None and desc_std is not None:
+        desc_mean = desc_mean.to(device)
+        desc_std = desc_std.to(device)
+        print("Loaded descriptor normalization stats from checkpoint")
+    else:
+        print("Warning: No descriptor normalization stats found in checkpoint")
     
     # Initialize model
     model = HybridGNNModel(
@@ -86,18 +95,10 @@ def predict(args):
     # Calculate descriptors
     descriptors = calculate_all_descriptors(smiles, use_fingerprints=use_fingerprints, fp_bits=fp_bits)
     descriptors = descriptors.unsqueeze(0).to(device) # Batch size 1
-    
-    # Notice: we don't normalize single molecule descriptors against a global mean/std here
-    # To be perfectly correct during single inference, we should load the training set's 
-    # descriptor mean/std from the checkpoint and apply it: 
-    # descriptors = (descriptors - checkpoint['desc_mean']) / checkpoint['desc_std']
-    # If the checkpoint doesn't have it, we assume un-normalized or fallback.
-    if 'desc_mean' in checkpoint and 'desc_std' in checkpoint:
-        mean = checkpoint['desc_mean'].to(device)
-        std = checkpoint['desc_std'].to(device)
-        descriptors = (descriptors - mean) / std
-    else:
-        print("  Warning: No descriptor normalization statistics found in checkpoint. Proceeding without normalization.")
+
+    # Reuse train-split normalization statistics saved in checkpoint.
+    if desc_mean is not None and desc_std is not None:
+        descriptors = (descriptors - desc_mean) / desc_std
     
     # Convert to graph data
     data = smiles_to_data(smiles, y=0.0) # Dummy target

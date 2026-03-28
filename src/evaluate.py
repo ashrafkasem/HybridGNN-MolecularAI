@@ -40,6 +40,15 @@ def evaluate_model(args):
     use_fingerprints = checkpoint.get('use_fingerprints', True)
     fp_bits = checkpoint.get('fp_bits', 512)
     descriptor_size = checkpoint.get('descriptor_size', 544)
+    desc_mean = checkpoint.get('desc_mean')
+    desc_std = checkpoint.get('desc_std')
+
+    if desc_mean is not None and desc_std is not None:
+        desc_mean = desc_mean.to(device)
+        desc_std = desc_std.to(device)
+        print("Loaded descriptor normalization stats from checkpoint")
+    else:
+        print("Warning: No descriptor normalization stats found in checkpoint")
     
     print(f"Model config: Fingerprints={use_fingerprints}, Bits={fp_bits}")
     
@@ -96,7 +105,8 @@ def evaluate_model(args):
                 csv_file, 
                 dataset_name=dataset_name,
                 use_fingerprints=use_fingerprints,
-                fp_bits=fp_bits
+                fp_bits=fp_bits,
+                cache_dir=args.cache_dir
             )
         except Exception as e:
             print(f"  ⚠️  Skipping {dataset_name}: {str(e)}")
@@ -114,6 +124,8 @@ def evaluate_model(args):
                 batch_size = batch.num_graphs
                 desc_size = batch.descriptor_size[0].item() if hasattr(batch.descriptor_size, '__getitem__') else descriptor_size
                 descriptors = batch.descriptors.clone().view(batch_size, desc_size).to(device)
+                if desc_mean is not None and desc_std is not None:
+                    descriptors = (descriptors - desc_mean) / desc_std
                 
                 del batch.descriptors
                 del batch.descriptor_size
@@ -174,6 +186,8 @@ if __name__ == "__main__":
                        help='Path to trained model checkpoint (.pt)')
     parser.add_argument('--data_path', type=str, required=True,
                        help='Path to CSV file or directory of CSV files')
+    parser.add_argument('--cache_dir', type=str, default='data/processed/descriptors',
+                       help='Directory to store/load cached descriptor tensors (default: data/processed/descriptors)')
     parser.add_argument('--output_dir', type=str, default='evaluation_results',
                        help='Directory to save results')
     parser.add_argument('--batch_size', type=int, default=32,

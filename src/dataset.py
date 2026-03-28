@@ -10,7 +10,7 @@ class IC50Dataset_WithDescriptors(Dataset):
     """Dataset for IC50 molecular data with molecular descriptors."""
     
     def __init__(self, csv_path, transform=None, pre_transform=None, oversample=False, 
-                 dataset_name=None, use_fingerprints=True, fp_bits=512):
+                 dataset_name=None, use_fingerprints=True, fp_bits=512, cache_dir=None):
         super().__init__(None, transform, pre_transform)
         self.dataset_name = dataset_name or os.path.basename(csv_path)
         self.use_fingerprints = use_fingerprints
@@ -78,8 +78,10 @@ class IC50Dataset_WithDescriptors(Dataset):
         cache_filename += f"_fp{fp_bits}" if use_fingerprints else "_nofp"
         if oversample:
             cache_filename += "_os"
-            
-        cache_dir = os.path.dirname(csv_path)
+
+        if cache_dir is None:
+            cache_dir = os.path.dirname(csv_path)
+        os.makedirs(cache_dir, exist_ok=True)
         cache_path = os.path.join(cache_dir, f"{cache_filename}.pt")
         
         if os.path.exists(cache_path):
@@ -104,11 +106,11 @@ class IC50Dataset_WithDescriptors(Dataset):
             self.descriptors = torch.stack(descriptor_list)
             print(f"  Saving computed descriptors to {cache_path}...")
             torch.save(self.descriptors, cache_path)
-        
-        # Normalize descriptors
-        self.desc_mean = self.descriptors.mean(dim=0, keepdim=True)
-        self.desc_std = self.descriptors.std(dim=0, keepdim=True) + 1e-8
-        self.descriptors = (self.descriptors - self.desc_mean) / self.desc_std
+
+        # Normalization is intentionally applied outside the dataset class so
+        # train/test/evaluation/inference can share the same statistics.
+        self.desc_mean = None
+        self.desc_std = None
         
         print(f"  Loaded {self.dataset_name}: {len(self.df)} samples with {self.descriptors.shape[1]} descriptors")
 
